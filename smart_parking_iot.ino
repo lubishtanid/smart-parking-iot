@@ -1,72 +1,38 @@
-#include <Ultrasonic.h>
-#include <WiFi.h>
-#include <PubSubClient.h>
+#include <Arduino.h>
+#include <ESP32Servo.h>
 
-// Define the pins for the ultrasonic sensor
-#define TRIGGER_PIN 5
-#define ECHO_PIN 18
+const int triggerPin = 5; // Connect SRF05 Trigger Pin to ESP32 GPIO 4
+const int echoPin = 18;    // Connect SRF05 Echo Pin to ESP32 GPIO 5
+const int servoPin = 19;  // Connect Servo Signal Pin to ESP32 GPIO 13
 
-// Create an instance of the Ultrasonic sensor
-Ultrasonic ultrasonic(TRIGGER_PIN, ECHO_PIN);
-
-// WiFi credentials
-const char* ssid = "your_wifi_ssid";
-const char* password = "your_wifi_password";
-
-// MQTT broker details
-const char* mqttServer = "192.168.0.10";  // Replace with your Mosquitto broker IP address
-const int mqttPort = 1883;  // MQTT default port
-const char* clientId = "arduino_client";
-const char* topic = "distance";
-
-WiFiClient wifiClient;
-PubSubClient client(wifiClient);
+Servo myservo;
 
 void setup() {
   Serial.begin(9600);
-
-  // Connect to Wi-Fi network
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting to WiFi...");
-  }
-
-  // Connect to MQTT broker
-  client.setServer(mqttServer, mqttPort);
-  while (!client.connected()) {
-    if (client.connect(clientId)) {
-      Serial.println("Connected to MQTT broker");
-    } else {
-      Serial.print("Failed to connect to MQTT broker, retrying in 5 seconds...");
-      delay(5000);
-    }
-  }
+  pinMode(triggerPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  myservo.attach(servoPin);
 }
 
 void loop() {
-  // Read the distance from the ultrasonic sensor
-  float distance = ultrasonic.read();
+  digitalWrite(triggerPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(triggerPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(triggerPin, LOW);
 
-  // Publish the distance to the MQTT topic
-  char payload[10];
-  sprintf(payload, "%.2f", distance);
-  client.publish(topic, payload);
+  long duration = pulseIn(echoPin, HIGH);
+  float distance = duration * 0.034 / 2;
 
-  // Print the distance to the serial monitor
   Serial.print("Distance: ");
   Serial.print(distance);
   Serial.println(" cm");
 
-  delay(1000);  // Wait for 1 second before taking the next reading
+  if (distance <= 10.0) {
+    myservo.write(90); // Move the servo to 90 degrees
+  } else {
+    myservo.write(0); // Move the servo to 0 degrees
+  }
+
+  delay(1000);
 }
-
-
-
-
-
-
-
-
-
-
