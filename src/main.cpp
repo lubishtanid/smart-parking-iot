@@ -2,6 +2,8 @@
 #include <Ultrasonic.h>
 #include <MFRC522.h>
 #include <Servo.h>
+#include <U8g2lib.h>
+#include <Wire.h>
 
 //defining ultrasonic sensor pins
 Ultrasonic ultrasonic1(17, 16); //Trig pin: 17, Echo Pin: 16
@@ -19,7 +21,19 @@ MFRC522 mfrc522(SDA_PIN, RST_PIN);
 
 //servo motor pin
 Servo servoMotor;
-int servoPin = 13;
+const int servoPin = 13;
+
+//infrared sensors pins
+const int irSensor1Pin = 26;
+const int irSensor2Pin = 27;
+const int irSensor3Pin = 32;
+const int irSensor4Pin = 33;
+
+
+//oled sh1106 display definitions
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+
 
 
 void setup() {
