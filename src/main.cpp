@@ -8,17 +8,23 @@
 #include <MySQL_Connection.h>
 #include <MySQL_Cursor.h>
 #include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
 
+
+//blynk conf
+#define BLYNK_TEMPLATE_ID "TMPL40BYmBR4x"
+#define BLYNK_TEMPLATE_NAME "Smart Parking"
+#define BLYNK_AUTH_TOKEN "3IjcRYKXAjF6sTcBB_uMkHJvXTdcDPuR"
 
 // wifi
 const char* ssid = "Arbri";
 const char* password = "ardar123";
 
 //mysql db
-const char* host = "localhost";      // MySQL host address
-const char* user = "root";  // MySQL username
-const char* password_db = "";  // MySQL password
-const char* db = "iot_members";     // MySQL database name
+IPAddress mysqlServerAddress(127, 0, 0, 1);      // MySQL host address
+char user[] = "root";  // MySQL username
+char password_db[] = "";  // MySQL password
+char db[] = "iot_members";     // MySQL database name
 
 MySQL_Connection conn((Client *)&Serial);
 
@@ -71,6 +77,21 @@ void setup() {
   }
   Serial.println("Connected to WiFi");
 
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, password);
+
+  pinMode(irSensor1Pin, INPUT);
+  pinMode(irSensor2Pin, INPUT);
+  pinMode(irSensor3Pin, INPUT);
+  pinMode(irSensor4Pin, INPUT);
+
+  SPI.begin();
+  mfrc522.PCD_Init();
+  if (conn.connect(mysqlServerAddress, 3306, user, password_db, db)) {
+    Serial.println("Connected to MySQL Server");
+  } else {
+    Serial.println("Connection to MySQL server failed");
+    while (1);
+  }
   servoMotor.attach(SERVO_PIN); //attach servo pin
   servoMotor.write(0); // Initialize the servo position to 0 degrees
   // Initialize my custom Wire instance
@@ -79,26 +100,90 @@ void setup() {
 }
 
 void loop() {
+  Blynk.run();
   double distanceUS1, distanceUS2, distanceUS3;
-  bool gateOpen;
-  int commonParkingCount = 3;
-  int premiumParkingCount = 1;
+  bool gateOpen=false;
 
   distanceUS1 = ultrasonic1.read();
   distanceUS2 = ultrasonic2.read();
   distanceUS3 = ultrasonic3.read();
 
-  if (distanceUS1 <= 2.0 && commonParkingCount >= 1 && commonParkingCount <= 3){
+  //common infrared sensors
+  int sensor1Value=digitalRead(irSensor1Pin);
+  int sensor2Value=digitalRead(irSensor2Pin);
+  int sensor3Value=digitalRead(irSensor3Pin);
+
+  int highCommonSensorCount = 0;
+
+  if(sensor1Value == HIGH) {
+    highCommonSensorCount++;
+  }
+  if(sensor2Value == HIGH) {
+    highCommonSensorCount++;
+  }
+  if(sensor3Value == HIGH) {
+    highCommonSensorCount++;
+  }
+
+
+  int commonParkingCount = 3 - highCommonSensorCount;
+
+  //premium infrared sensors
+  int sensor4Value=digitalRead(irSensor4Pin);
+  int highPremiumSensorCount = 0;
+  if(sensor4Value == HIGH) {
+    highPremiumSensorCount++;
+  }
+
+  int premiumParkingCount = 1 - highPremiumSensorCount;
+
+  Blynk.virtualWrite(V5, sensor1Value);
+  Blynk.virtualWrite(V6, sensor2Value);
+  Blynk.virtualWrite(V7, sensor3Value);
+  Blynk.virtualWrite(V8, sensor4Value);
+
+  if (distanceUS1 <= 2.0 && commonParkingCount >= 1 && commonParkingCount <= 3 && gateOpen==false){
     servoMotor.write(90);
     delay(1000);
     gateOpen=true;
   }
 
-  if (distanceUS2 <= 2.0){
+  if (distanceUS2 <= 2.0 && gateOpen==false){
     servoMotor.write(90);
     delay(1000);
     gateOpen=true;
   }
+
+  // Read card UID
+  String cardUID = "";
+  if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+    for (byte i = 0; i < mfrc522.uid.size; i++) {
+      cardUID += String(mfrc522.uid.uidByte[i] < 0x10 ? "0" : "");
+      cardUID += String(mfrc522.uid.uidByte[i], HEX);
+    }
+    
+    // Check if card UID exists in the database
+    MySQL_Cursor *cursor = new MySQL_Cursor(&conn);
+    String query = "SELECT * FROM parking_members WHERE card_uid = '" + cardUID + "'";
+    cursor->execute(query.c_str());
+
+    // Check if there are any results
+    row_values *row = NULL;
+
+    row = cursor->get_next_row();
+    if (row != NULL && premiumParkingCount==1 && gateOpen==false){
+      // UID found in database
+      delete cursor;
+      servoMotor.write(90);
+      gateOpen = true;
+    }
+    else{
+      //UID  not found in database
+      delete cursor;
+    }
+  }
+  mfrc522.PICC_HaltA();    
+  delay(2000);
 
   if (distanceUS3 >= 5.0 && gateOpen==true){
     delay(2000);
