@@ -3,29 +3,29 @@
 #define BLYNK_TEMPLATE_NAME "Smart Parking"
 #define BLYNK_AUTH_TOKEN "3IjcRYKXAjF6sTcBB_uMkHJvXTdcDPuR"
 
+
 #include <Arduino.h>
 #include <Ultrasonic.h>
 #include <MFRC522.h>
 #include <ESP32Servo.h>
-// #include <U8g2lib.h>
+#include <Wire.h>
+#include <U8g2lib.h>
 #include <SPI.h>
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
-
+#include <HTTPClient.h>
 
 
 // wifi
 const char* ssid = "Arbri";
 const char* password = "ardar123";
 
-const char* server = "localhost";
-const int serverPort = 8080;
-
 
 //defining ultrasonic sensor pins
 Ultrasonic ultrasonic1(17, 16); //Trig pin: 17, Echo Pin: 16
-Ultrasonic ultrasonic2(4, 21); //Trig pin: 4, Echo Pin: 21
-Ultrasonic ultrasonic3(22, 25); //Trig pin: 22, Echo Pin: 25
+Ultrasonic ultrasonic2(4, 26); //Trig pin: 4, Echo Pin: 26
+Ultrasonic ultrasonic3(33, 25); //Trig pin: 33 Echo Pin: 25
+
 
 //RFID RC522 pins
 #define SDA_PIN 5
@@ -36,40 +36,41 @@ Ultrasonic ultrasonic3(22, 25); //Trig pin: 22, Echo Pin: 25
 
 MFRC522 mfrc522(SDA_PIN, RST_PIN);
 
+
 //servo motor pin
 #define SERVO_PIN 13
 Servo servoMotor; // servo object
 
-//infrared sensors pins
-// const int irSensor1Pin = 26;
-// const int irSensor2Pin = NaN;
-// const int irSensor3Pin = 32;
-// const int irSensor4Pin = 33;
+
+//photoresistor pins
+const int commonPhotoresistorPin1 = 34;
+const int commonPhotoresistorPin2 = 35;
+const int commonPhotoresistorPin3 = 36;
+const int premiumPhotoresistorPin = 39;
 
 
-// //oled sh1106 display definitions
-// #define SCREEN_WIDTH 128
-// #define SCREEN_HEIGHT 64
+//U8g2 display object with custom pins
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
-// #define CUSTOM_SDA_PIN 14
-// #define CUSTOM_SCL_PIN 15
-
-// // Create an instance of the U8g2 SH1106 display library with your custom Wire instance
-// U8G2_SH1106_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, /* clock=*/ CUSTOM_SCL_PIN, /* data=*/ CUSTOM_SDA_PIN, /* reset=*/ U8X8_PIN_NONE);
 
 int commonParkingCount=3;
 int premiumParkingCount=1;
+
+bool gateOpen;
+
 
 void setup() {
   Serial.begin(115200);
   SPI.begin();
   mfrc522.PCD_Init();
   Blynk.begin(BLYNK_AUTH_TOKEN, ssid, password);
-  // u8g2.begin();
-  // u8g2.setFont(u8g2_font_ncenB10_tr);
+  Wire.begin();
+  u8g2.begin();
+  u8g2.setFont(u8g2_font_ncenB08_tr);  //font size
+
 
   // Clear the display buffer
-  // u8g2.clearBuffer();
+  u8g2.clearBuffer();
 
   while (!Serial);
   WiFi.begin(ssid, password);
@@ -80,148 +81,191 @@ void setup() {
   Serial.println("Connected to WiFi");
 
 
-  // pinMode(irSensor1Pin, INPUT);
-  // pinMode(irSensor2Pin, INPUT);
-  // pinMode(irSensor3Pin, INPUT);
-  // pinMode(irSensor4Pin, INPUT);
 
   servoMotor.attach(SERVO_PIN); //attach servo pin
-  servoMotor.write(90); // Initialize the servo position to 0 degrees
-
+  servoMotor.write(127); // Initialize the servo position to 127 degrees
 }
 
-void loop() {
-  Blynk.run();
-  double distanceUS1, distanceUS2, distanceUS3;
-  bool gateOpen=false;
 
-  // u8g2.clearBuffer();
+void loop() {
+  Blynk.run();  
+  double distanceUS1, distanceUS2, distanceUS3;
+
+  u8g2.clearBuffer();
 
 
   distanceUS1 = ultrasonic1.read();
+  Serial.print("Ultrasonic sensor 1 distance: ");
+  Serial.println(distanceUS1);
+
   distanceUS2 = ultrasonic2.read();
+  Serial.print("Ultrasonic sensor 2 distance: ");
+  Serial.println(distanceUS2);
+
   distanceUS3 = ultrasonic3.read();
-
-  // //common infrared sensors
-  // int sensor1Value=digitalRead(irSensor1Pin);
-  // int sensor2Value=digitalRead(irSensor2Pin);
-  // int sensor3Value=digitalRead(irSensor3Pin);
-
-  // int highCommonSensorCount = 0;
-
-  // if(sensor1Value == HIGH) {
-  //   highCommonSensorCount++;
-  // }
-  // if(sensor2Value == HIGH) {
-  //   highCommonSensorCount++;
-  // }
-  // if(sensor3Value == HIGH) {
-  //   highCommonSensorCount++;
-  // }
+  Serial.print("Ultrasonic sensor 3 distance: ");
+  Serial.println(distanceUS3);
 
 
-  // commonParkingCount = 3 - highCommonSensorCount;
+  //common photoresistors
+  int photoresistorValue1=analogRead(commonPhotoresistorPin1);
+  Serial.print("Common photoresistor1 value: ");
+  Serial.println(photoresistorValue1);
 
-  // //premium infrared sensors
-  // int sensor4Value=digitalRead(irSensor4Pin);
+  int photoresistorValue2=analogRead(commonPhotoresistorPin2);
+  Serial.print("Common photoresistor2 value: ");
+  Serial.println(photoresistorValue2);
+  
+  int photoresistorValue3=analogRead(commonPhotoresistorPin3);
+  Serial.print("Common photoresistor3 value: ");
+  Serial.println(photoresistorValue3);
 
-  // int highPremiumSensorCount = 0;
+  int lowCommonResistorCount = 0;
 
-  // if(sensor4Value == HIGH) {
-  //   highPremiumSensorCount++;
-  // }
+  if(photoresistorValue1 <= 1400) {
+    lowCommonResistorCount++;
+    Blynk.virtualWrite(V5, LOW);
+  }
+  else{
+    Blynk.virtualWrite(V5, HIGH);
+  }
+  if(photoresistorValue2 <= 1400) {
+    lowCommonResistorCount++;
+    Blynk.virtualWrite(V6, LOW);
+  }
+  else{
+    Blynk.virtualWrite(V6, HIGH);
+  }
+  if(photoresistorValue3 <= 1400) {
+    lowCommonResistorCount++;
+    Blynk.virtualWrite(V7, LOW);
+  }
+  else{
+    Blynk.virtualWrite(V7, HIGH);
+  }
 
-  // premiumParkingCount = 1 - highPremiumSensorCount;
 
-  // Blynk.virtualWrite(V5, sensor1Value);
-  // Blynk.virtualWrite(V6, sensor2Value);
-  // Blynk.virtualWrite(V7, sensor3Value);
-  // Blynk.virtualWrite(V8, sensor4Value);
+  commonParkingCount = 3 - lowCommonResistorCount;
+
+  Serial.print("Common parking count: ");
+  Serial.println(commonParkingCount);
+
+  //premium infrared sensors
+  int photoresistorValue4=analogRead(premiumPhotoresistorPin);
+  Serial.print("Premium photoresistor value: ");
+  Serial.println(photoresistorValue4);
+
+  int lowPremiumResistorCount = 0;
+
+  if(photoresistorValue4 <= 1400) {
+    lowPremiumResistorCount++;
+    Blynk.virtualWrite(V8, LOW);
+  }
+  else{
+    Blynk.virtualWrite(V8, HIGH);
+  }
+
+  premiumParkingCount = 1 - lowPremiumResistorCount;
+  Serial.print("Premium parking count: ");
+  Serial.println(premiumParkingCount);
 
 
-  // // Create a message with the updated variables
-  // char message[100];
-  // snprintf(message, sizeof(message), "%d / 3 vende normale te lira.\n%d / 1 vende premium te lira.", commonParkingCount, premiumParkingCount);
+  // Message to display parking slots availability
+  char commonMessage[50];
+  snprintf(commonMessage, sizeof(commonMessage), "%d / 3 vende normale", commonParkingCount);
+
+  char premiumMessage[50];
+  snprintf(premiumMessage, sizeof(premiumMessage), "%d / 1 vende premium", premiumParkingCount);
 
   // Draw the message on the screen
-  // u8g2.drawStr(0, 20, "Parking Status:");
-  // u8g2.drawStr(0, 40, message);
+  u8g2.drawStr(0, 10, "Statusi i vendeve te");
+  u8g2.drawStr(0, 20, "lira ne parking:");
+  u8g2.drawStr(0, 40, commonMessage);
+  u8g2.drawStr(0, 60, premiumMessage);
 
   // Send the buffer to the OLED display
-  // u8g2.sendBuffer();
+  u8g2.sendBuffer();
 
-  // delay(1000);
+  delay(1000);
 
   //open gate when entering
-  if (distanceUS1 <= 2.0 && commonParkingCount >= 1 && commonParkingCount <= 3 && gateOpen==false){
-    servoMotor.write(20);
+  if (distanceUS1 <= 2.0 && commonParkingCount >= 1 && commonParkingCount <= 3){
+    servoMotor.write(30);
     gateOpen=true;
-    delay(1000);
+    delay(2000);
   }
 
   //open gate when leaving
-  if (distanceUS2 <= 2.0 && gateOpen==false){
-    servoMotor.write(20);
+  if (distanceUS2 <= 2.0){
+    servoMotor.write(30);
     gateOpen=true;
-    delay(1000);
+    delay(2000);
   }
 
   // Read card UID
-  String rfid_uid = "";
+  String rfidUID = "";
   if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
     for (byte i = 0; i < mfrc522.uid.size; i++) {
-      rfid_uid += String(mfrc522.uid.uidByte[i] < 0x10 ? "0" : "");
-      rfid_uid += String(mfrc522.uid.uidByte[i], HEX);
+      rfidUID += String(mfrc522.uid.uidByte[i] < 0x10 ? "0" : "");
+      rfidUID += String(mfrc522.uid.uidByte[i], HEX);
+    }
+    Serial.println("Scanned UID: " + rfidUID);
+
+    //open gate using rfid tag (premium membership)
+    if (checkUID(rfidUID) && premiumParkingCount==1) {
+      Serial.println("UID exists in the database");
+      delay(1000);
+      servoMotor.write(30);
+      gateOpen=true;
+      delay(2000);
     }
   }
   
-  Serial.println("Scanned UID: " + rfid_uid);
-
-  //open gate using rfid tag (premium membership)
-  if (checkUID(rfid_uid) && premiumParkingCount==1) {
-    Serial.println("UID exists in the database");
-    servoMotor.write(20);
-    gateOpen=true;
-    delay(1000);
-  }
 
   mfrc522.PICC_HaltA();
 
   //close gate (wait if the car is below the gate)
-  if (distanceUS3 >= 5.0 && gateOpen==true){
-    delay(2000);
-    servoMotor.write(125);
-    gateOpen=false;
+
+  while (distanceUS3 >= 13.0 && gateOpen==true){
     delay(1000);
+    servoMotor.write(127);
+    gateOpen=false;
+    break;
   }
+
 }
 
 
-bool checkUID(String uid) {
-  WiFiClient client;
-  
-  if (client.connect(server, serverPort)){
-    String postRequest = "POST /iot_fiek/check_rfid.php HTTP/1.1\r\n";
-    postRequest += "Host: " + String(server) + "\r\n";
-    postRequest += "Content-Type: application/x-www-form-urlencoded\r\n";
-    postRequest += "Content-Length: " + String(uid.length()) + "\r\n\r\n";
-    postRequest += "rfid_uid=" + uid;
-    
-    client.print(postRequest);
+bool checkUID(String rfid_uid) {
+  HTTPClient http;
 
-    while (client.connected()) {
-      if (client.available()) {
-        String line = client.readStringUntil('\n');
-        line.trim();
-        if (line == "true") {
-          return true; //UID exists in the db
-        }
-      }
+  String serverURL = "http://192.168.0.46:8080/iot_fiek/check_rfid.php"; // Replace with your server URL
+
+  http.begin(serverURL);
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+  String postData = "rfid_uid=" + rfid_uid;
+
+  int httpCode = http.POST(postData);
+
+  Serial.print("URL: ");
+  Serial.println(serverURL);
+  Serial.print("Data: ");
+  Serial.println(postData);
+  Serial.print("httpCode: ");
+  Serial.println(httpCode);
+
+  if (httpCode > 0) {
+    String payload = http.getString();
+    Serial.println("HTTP Response: " + payload);
+
+    if (payload == "true") {
+      return true; // UID exists in the database
     }
-
-    client.stop();
   } else {
-    Serial.println("Failed to connect to server");
+    Serial.println("Error sending POST request. HTTP Response code: " + String(httpCode));
   }
-  return false; //UID does not exist in the db
+
+  http.end();
+  return false; // UID does not exist in the database
 }
